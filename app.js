@@ -2,6 +2,7 @@ const express = require('express');
 const jsonStream = require('JSONStream');
 const fs = require('fs');
 const fetch = require('node-fetch');
+const cors = require('cors');
 
 const app = express();
 const port = 3000;
@@ -9,7 +10,12 @@ const NODES_FILE_PATH = process.env.NODE_LOCATION || './nodes.json';
 const FILES_FILE_PATH = process.env.FILES_LOCATION || './files.json';
 
 app.use(express.json());
-
+app.use(cors({
+    origin: '*',
+    credentials: true,
+    methods: '*',
+    allowedHeaders: '*'
+}));
 function fileExists(path) {
     try {
         fs.accessSync(path, fs.constants.F_OK);
@@ -24,12 +30,12 @@ app.post('/add-node', (req, res) => {
 
     const nodesFilePath = NODES_FILE_PATH;
     const nodeIP = req.ip;
-    const nodeInfo = { storageCapacityInMb: storageCapacityInMb };
+    const nodeInfo = { storageCapacityInMb: storageCapacityInMb, online: true };
     updateNodeInfo(nodesFilePath, nodeIP, nodeInfo);
 
     const filesFilePath = FILES_FILE_PATH;
     updateFilesInfo(filesFilePath, files, nodeIP);
-
+    console.log("create new node")
     res.status(200).json({ success: true });
 });
 
