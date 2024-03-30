@@ -1,4 +1,4 @@
-const express = require('express');
+\const express = require('express');
 const jsonStream = require('JSONStream');
 const fs = require('fs');
 const fetch = require('node-fetch');
@@ -101,11 +101,10 @@ app.get('/chunk-file', (req, res) => {
         return res.status(500).json({ error: "Node information not found" });
     }
 
-    // Filtra los nodos que están en línea antes de proceder
     const onlineNodeIPs = Object.keys(nodes).filter(nodeIP => nodes[nodeIP].online);
     const nodeCapacities = onlineNodeIPs.map(ip => nodes[ip].storageCapacityInMb);
 
-    if (onlineNodeIPs.length < 2) { // Asegura al menos dos nodos en línea para replicación
+    if (onlineNodeIPs.length < 2) {
         return res.status(507).json({ error: "Insufficient online nodes for replication (minimum required: 2)" });
     }
 
@@ -128,9 +127,108 @@ app.get('/chunk-file', (req, res) => {
             return res.status(507).json({ error: "Insufficient Storage Capacity among online nodes" });
         }
     }
-
-    res.json(chunkDistribution);
+    res.json({
+        chunkDistribution,
+        totalChunks,
+        chunkSize
+    });
 });
+
+app.post('/add-chunk', (req, res) => {
+    const { chunkId, fileName } = req.body;
+    if (!chunkId || !fileName) {
+        return res.status(400).json({ error: "chunkId and fileName are required" });
+    }
+
+    const nodeIP = req.ip;
+    addChunkToFile(FILES_FILE_PATH, fileName, chunkId, nodeIP);
+
+    res.status(200).json({ success: true, message: `Chunk ${chunkId} added to file ${fileName}.` });
+});
+
+function addChunkToFile(filePath, fileName, chunkId, nodeIP) {
+    let files = {};
+    if (fileExists(filePath)) {
+        const filesData = fs.readFileSync(filePath, 'utf8');
+        files = JSON.parse(filesData);
+    }
+    if (!files[fileName]) {
+        files[fileName] = { chunks: {} };
+    }
+    if (!files[fileName].chunks[chunkId]) {
+        files[fileName].chunks[chunkId] = [];
+    }
+
+    if (!files[fileName].chunks[chunkId].includes(nodeIP)) {
+        files[fileName].chunks[chunkId].push(nodeIP);
+    }
+    fs.writeFileSync(filePath, JSON.stringify(files, null, 2));
+}
+
+app.post('/update-file', (req, res) => {
+    const { fileName, chunkSize, totalChunks } = req.body;
+
+    if (!fileName || !chunkSize || !totalChunks) {
+        return res.status(400).json({ error: "fileName, chunkSize and totalChunks are required" });
+    }
+
+    const updated = updateFileInfo(FILES_FILE_PATH, fileName, chunkSize, totalChunks);
+    if (updated) {
+        res.status(200).json({ success: true, message: `File ${fileName} updated successfully.` });
+    } else {
+        res.status(500).json({ success: false, message: "Error updating file information." });
+    }
+});
+
+function updateFileInfo(filePath, fileName, chunkSize, totalChunks) {
+    let filesData = {};
+
+    if (fileExists(filePath)) {
+        const data = fs.readFileSync(filePath, 'utf8');
+        filesData = JSON.parse(data);
+    }
+
+    if (!filesData[fileName]) {
+        filesData[fileName] = { chunks: {}, chunkSize: chunkSize, totalChunks: totalChunks };
+    } else {
+        filesData[fileName].chunkSize = chunkSize;
+        filesData[fileName].totalChunks = totalChunks;
+    }
+
+    try {
+        fs.writeFileSync(filePath, JSON.stringify(filesData, null, 2));
+        return true;
+    } catch (error) {
+        console.error("Error writing to files.json:", error);
+        return false;
+    }
+}
+
+app.get('/get-file', (req, res) => {
+    const fileName = req.query.fileName;
+
+    if (!fileName) {
+        return res.status(400).json({ error: "fileName query parameter is required" });
+    }
+
+    const fileInfo = getFileInfo(FILES_FILE_PATH, fileName);
+    if (fileInfo) {
+        res.json(fileInfo);
+    } else {
+        res.status(404).json({ error: `File ${fileName} not found.` });
+    }
+});
+
+function getFileInfo(filePath, fileName) {
+    if (fileExists(filePath)) {
+        const filesData = fs.readFileSync(filePath, 'utf8');
+        const files = JSON.parse(filesData);
+        if (files[fileName]) {
+            return files[fileName];
+        }
+    }
+    return null;
+}
 
 async function pingNode(nodeIP) {
     try {
