@@ -1,0 +1,18 @@
+{
+  "127.0.0.1": {
+    "storageCapacityInMb": 512,
+    "online": false
+  },
+  "127.0.0.5": {
+    "storageCapacityInMb": 1024,
+    "online": false
+  },
+  "127.0.0.6": {
+    "storageCapacityInMb": 2048,
+    "online": false
+  },
+  "127.0.0.7": {
+    "storageCapacityInMb": 10048,
+    "online": false
+  }
+}
