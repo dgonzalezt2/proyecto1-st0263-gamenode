@@ -9,6 +9,19 @@ const port = 3000;
 const NODES_FILE_PATH = process.env.NODE_LOCATION || './nodes.json';
 const FILES_FILE_PATH = process.env.FILES_LOCATION || './files.json';
 
+let nodes = {};
+let files = {};
+
+if (fs.existsSync(NODES_FILE_PATH)) {
+    const nodesData = fs.readFileSync(NODES_FILE_PATH, 'utf8');
+    nodes = JSON.parse(nodesData);
+}
+
+if (fs.existsSync(FILES_FILE_PATH)) {
+    const filesData = fs.readFileSync(FILES_FILE_PATH, 'utf8');
+    files = JSON.parse(filesData);
+}
+
 app.use(express.json());
 app.use(cors({
     origin: '*',
@@ -16,6 +29,7 @@ app.use(cors({
     methods: '*',
     allowedHeaders: '*'
 }));
+
 function fileExists(path) {
     try {
         fs.accessSync(path, fs.constants.F_OK);
@@ -25,52 +39,90 @@ function fileExists(path) {
     }
 }
 
-app.post('/add-node', (req, res) => {
-    const { storageCapacityInMb, files } = req.body;
-
-    const nodesFilePath = NODES_FILE_PATH;
-    const nodeIP = req.ip;
-    const nodeInfo = { storageCapacityInMb: storageCapacityInMb, online: true };
-    updateNodeInfo(nodesFilePath, nodeIP, nodeInfo);
-
-    const filesFilePath = FILES_FILE_PATH;
-    updateFilesInfo(filesFilePath, files, nodeIP);
-    console.log("create new node")
-    res.status(200).json({ success: true });
-});
-
 function updateNodeInfo(filePath, nodeIP, nodeInfo) {
-    let nodes = {};
-    if (fileExists(filePath)) {
-        const nodesData = fs.readFileSync(filePath, 'utf8');
-        nodes = JSON.parse(nodesData);
-    }
     nodes[nodeIP] = nodeInfo;
     fs.writeFileSync(filePath, JSON.stringify(nodes, null, 2));
 }
 
-function updateFilesInfo(filePath, files, nodeIP) {
-    let existingFiles = {};
-    if (fileExists(filePath)) {
-        const filesData = fs.readFileSync(filePath, 'utf8');
-        existingFiles = JSON.parse(filesData);
-    }
-    for (const [fileName, fileInfo] of Object.entries(files)) {
-        if (!existingFiles[fileName]) {
-            existingFiles[fileName] = { chunks: {} };
-        }
-        fileInfo.availableChunks.forEach(chunk => {
-            if (!existingFiles[fileName].chunks[chunk]) {
-                existingFiles[fileName].chunks[chunk] = [];
-            }
-            if (!existingFiles[fileName].chunks[chunk].includes(nodeIP)) {
-                existingFiles[fileName].chunks[chunk].push(nodeIP);
-            }
-        });
-    }
-    fs.writeFileSync(filePath, JSON.stringify(existingFiles, null, 2));
+function updateFilesInfo(filePath, filesData) {
+    files = filesData;
+    fs.writeFileSync(filePath, JSON.stringify(files, null, 2));
 }
 
+function updateNodeStorageCapacity(nodeIP, newFreeStorage) {
+    if (nodes[nodeIP]) {
+        nodes[nodeIP].storageCapacityInMb = newFreeStorage;
+        fs.writeFileSync(NODES_FILE_PATH, JSON.stringify(nodes, null, 2));
+    }
+}
+
+function updateFileInfo(filePath, fileName, chunkSize, totalChunks) {
+    let filesData = {};
+
+    if (fileExists(filePath)) {
+        const data = fs.readFileSync(filePath, 'utf8');
+        filesData = JSON.parse(data);
+    }
+
+    if (!filesData[fileName]) {
+        filesData[fileName] = { chunks: {}, chunkSize: chunkSize, totalChunks: totalChunks };
+    } else {
+        filesData[fileName].chunkSize = chunkSize;
+        filesData[fileName].totalChunks = totalChunks;
+    }
+
+    try {
+        fs.writeFileSync(filePath, JSON.stringify(filesData, null, 2));
+        return true;
+    } catch (error) {
+        console.error("Error writing to files.json:", error);
+        return false;
+    }
+}
+
+async function pingNodes() {
+    console.log("ping to nodes");
+    let updated = false;
+    const nodesFilePath = NODES_FILE_PATH;
+    if (fileExists(nodesFilePath)) {
+        const pingPromises = Object.keys(nodes).map(async (nodeIP) => {
+            const online = await pingNode(nodeIP);
+            if (nodes[nodeIP].online !== online) {
+                nodes[nodeIP].online = online;
+                updated = true;
+            }
+        });
+
+        await Promise.all(pingPromises);
+
+        if (updated) {
+            fs.writeFileSync(nodesFilePath, JSON.stringify(nodes, null, 2));
+        }
+    } else {
+        console.log("No se encontraron nodos para hacer ping.");
+    }
+}
+
+async function pingNode(nodeIP) {
+    try {
+        const response = await fetch(`http://${nodeIP}/ping`);
+        return response.ok;
+    } catch (error) {
+        return false;
+    }
+}
+
+app.post('/add-node', (req, res) => {
+    const { storageCapacityInMb, files } = req.body;
+
+    const nodeIP = req.ip;
+    const nodeInfo = { storageCapacityInMb: storageCapacityInMb, online: true };
+    updateNodeInfo(NODES_FILE_PATH, nodeIP, nodeInfo);
+
+    updateFilesInfo(FILES_FILE_PATH, files);
+    console.log("create new node")
+    res.status(200).json({ success: true });
+});
 
 function calculateChunkSize(fileSizeInMb) {
     if (fileSizeInMb <= 128) {
@@ -136,7 +188,6 @@ app.get('/chunk-file', (req, res) => {
     });
 });
 
-
 /**
  * Verifica si todas las llaves requeridas están presentes en el objeto.
  * @param {Object} obj - El objeto a verificar.
@@ -146,7 +197,6 @@ app.get('/chunk-file', (req, res) => {
 function checkRequiredKeys(obj, requiredKeys) {
     return requiredKeys.filter(key => !(key in obj));
 }
-
 
 app.post('/add-chunk', (req, res) => {
     const requiredKeys = ['chunkId', 'fileName', 'newFreeStorage'];
@@ -185,19 +235,6 @@ function addChunkToFile(filePath, fileName, chunkId, nodeIP, newFreeStorage) {
     updateNodeStorageCapacity(nodeIP, newFreeStorage);
 }
 
-function updateNodeStorageCapacity(nodeIP, newFreeStorage) {
-    let nodes = {};
-    if (fileExists(NODES_FILE_PATH)) {
-        const nodesData = fs.readFileSync(NODES_FILE_PATH, 'utf8');
-        nodes = JSON.parse(nodesData);
-    }
-
-    if (nodes[nodeIP]) {
-        nodes[nodeIP].storageCapacityInMb = newFreeStorage;
-        fs.writeFileSync(NODES_FILE_PATH, JSON.stringify(nodes, null, 2));
-    }
-}
-
 app.post('/update-file', (req, res) => {
     const { fileName, chunkSize, totalChunks } = req.body;
 
@@ -212,30 +249,6 @@ app.post('/update-file', (req, res) => {
         res.status(500).json({ success: false, message: "Error updating file information." });
     }
 });
-
-function updateFileInfo(filePath, fileName, chunkSize, totalChunks) {
-    let filesData = {};
-
-    if (fileExists(filePath)) {
-        const data = fs.readFileSync(filePath, 'utf8');
-        filesData = JSON.parse(data);
-    }
-
-    if (!filesData[fileName]) {
-        filesData[fileName] = { chunks: {}, chunkSize: chunkSize, totalChunks: totalChunks };
-    } else {
-        filesData[fileName].chunkSize = chunkSize;
-        filesData[fileName].totalChunks = totalChunks;
-    }
-
-    try {
-        fs.writeFileSync(filePath, JSON.stringify(filesData, null, 2));
-        return true;
-    } catch (error) {
-        console.error("Error writing to files.json:", error);
-        return false;
-    }
-}
 
 app.get('/get-file', (req, res) => {
     const fileName = req.query.fileName;
@@ -271,37 +284,6 @@ function getFileInfo(filePath, fileName) {
         }
     }
     return null;
-}
-
-async function pingNode(nodeIP) {
-    try {
-        const response = await fetch(`http://${nodeIP}/ping`);
-        return response.ok;
-    } catch (error) {
-        return false;
-    }
-}
-
-async function pingNodes() {
-    console.log("ping to nodes")
-    let nodes = {};
-    const nodesFilePath = NODES_FILE_PATH;
-    if (fileExists(nodesFilePath)) {
-        const nodesData = fs.readFileSync(nodesFilePath, 'utf8');
-        nodes = JSON.parse(nodesData);
-    } else {
-        console.log("No se encontraron nodos para hacer ping.");
-        return;
-    }
-
-    const pingPromises = Object.keys(nodes).map(async (nodeIP) => {
-        const online = await pingNode(nodeIP);
-        nodes[nodeIP].online = online;
-    });
-
-    await Promise.all(pingPromises);
-
-    fs.writeFileSync(nodesFilePath, JSON.stringify(nodes, null, 2));
 }
 
 app.get('/get-nodes', (req, res) => {
