@@ -134,12 +134,28 @@ app.get('/chunk-file', (req, res) => {
     });
 });
 
-app.post('/add-chunk', (req, res) => {
-    const { chunkId, fileName } = req.body;
-    if (!chunkId || !fileName) {
-        return res.status(400).json({ error: "chunkId and fileName are required" });
-    }
+/**
+ * Verifica si todas las llaves requeridas están presentes en el objeto.
+ * @param {Object} obj - El objeto a verificar.
+ * @param {Array} requiredKeys - Las llaves requeridas.
+ * @returns {Array} - Un array vacío si todas las llaves existen, o un array con las llaves faltantes.
+ */
+function checkRequiredKeys(obj, requiredKeys) {
+    return requiredKeys.filter(key => !(key in obj));
+}
 
+
+app.post('/add-chunk', (req, res) => {
+    const requiredKeys = ['chunkId', 'fileName'];
+    const missingKeys = checkRequiredKeys(req.body, requiredKeys);
+
+    if (missingKeys.length > 0) {
+        return res.status(400).json({
+            success: false,
+            message: `Missing required parameters: ${missingKeys.join(', ')}.`
+        });
+    }
+    const { chunkId, fileName } = req.body;
     const nodeIP = req.ip;
     addChunkToFile(FILES_FILE_PATH, fileName, chunkId, nodeIP);
 
