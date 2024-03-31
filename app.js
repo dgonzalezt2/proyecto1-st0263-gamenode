@@ -73,7 +73,10 @@ function updateFilesInfo(filePath, files, nodeIP) {
 
 
 function calculateChunkSize(fileSizeInMb) {
-    if (fileSizeInMb <= 1024) {
+    if (fileSizeInMb <= 128) {
+        return fileSizeInMb;
+    }
+    else if (fileSizeInMb <= 1024) {
         return 128;
     } else if (fileSizeInMb <= 10240) {
         return 256;
@@ -88,14 +91,13 @@ app.get('/chunk-file', (req, res) => {
         return res.status(400).json({ error: "fileSizeInMb query parameter is required" });
     }
 
-    const fileSize = parseInt(fileSizeInMb, 10);
+    const fileSize = parseFloat(fileSizeInMb);
     const chunkSize = calculateChunkSize(fileSize);
-    const totalChunks = Math.ceil(fileSize / chunkSize);
+    const totalChunks = Math.max(Math.ceil(fileSize / chunkSize), 1);
 
-    const nodesFilePath = NODES_FILE_PATH;
     let nodes = {};
-    if (fileExists(nodesFilePath)) {
-        const nodesData = fs.readFileSync(nodesFilePath, 'utf8');
+    if (fileExists(NODES_FILE_PATH)) {
+        const nodesData = fs.readFileSync(NODES_FILE_PATH, 'utf8');
         nodes = JSON.parse(nodesData);
     } else {
         return res.status(500).json({ error: "Node information not found" });
@@ -133,6 +135,7 @@ app.get('/chunk-file', (req, res) => {
         chunkSize
     });
 });
+
 
 /**
  * Verifica si todas las llaves requeridas están presentes en el objeto.
@@ -243,6 +246,9 @@ app.get('/get-file', (req, res) => {
 
     const fileInfo = getFileInfo(FILES_FILE_PATH, fileName);
     if (fileInfo) {
+        if (fileInfo.error) {
+            return res.status(202).json(fileInfo);
+        }
         res.json(fileInfo);
     } else {
         res.status(404).json({ error: `File ${fileName} not found.` });
@@ -254,7 +260,14 @@ function getFileInfo(filePath, fileName) {
         const filesData = fs.readFileSync(filePath, 'utf8');
         const files = JSON.parse(filesData);
         if (files[fileName]) {
-            return files[fileName];
+            if ("chunkSize" in files[fileName] && "totalChunks" in files[fileName]) {
+                return files[fileName];
+            } else {
+                return { 
+                    error: true, 
+                    message: `File ${fileName} is currently being uploaded.` 
+                };
+            }
         }
     }
     return null;
