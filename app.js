@@ -81,7 +81,6 @@ function updateFileInfo(filePath, fileName, chunkSize, totalChunks) {
 }
 
 async function pingNodes() {
-    console.log("ping to nodes");
     let updated = false;
     const nodesFilePath = NODES_FILE_PATH;
     if (fileExists(nodesFilePath)) {
@@ -138,6 +137,7 @@ function calculateChunkSize(fileSizeInMb) {
 }
 
 app.get('/chunk-file', (req, res) => {
+    console.log("Generando particionamiento de archivo")
     const { fileSizeInMb } = req.query;
     if (!fileSizeInMb) {
         return res.status(400).json({ error: "fileSizeInMb query parameter is required" });
@@ -210,6 +210,7 @@ app.post('/add-chunk', (req, res) => {
     }
     const { chunkId, fileName, newFreeStorage } = req.body;
     const nodeIP = req.ip;
+    console.log(`El Nodo ${nodeIP} tiene en su sistema el chunk ${chunkId} del archivo ${fileName}`)
     addChunkToFile(FILES_FILE_PATH, fileName, chunkId, nodeIP, newFreeStorage);
 
     res.status(200).json({ success: true, message: `Chunk ${chunkId} added to file ${fileName}.` });
@@ -240,7 +241,7 @@ function addChunkToFile(filePath, fileName, chunkId, nodeIP, newFreeStorage) {
 
 app.post('/update-file', (req, res) => {
     const { fileName, chunkSize, totalChunks } = req.body;
-
+    console.log(`El cliente notifica que el archivo ${fileName} ha completado la subida de chunks, un total de ${totalChunks}`)
     if (!fileName || !chunkSize || !totalChunks) {
         return res.status(400).json({ error: "fileName, chunkSize and totalChunks are required" });
     }
@@ -290,17 +291,18 @@ function getFileInfo(filePath, fileName) {
 }
 
 app.get('/get-nodes', (req, res) => {
-    const nodesData = getOnlineNodes(NODES_FILE_PATH);
+    const clientIP = req.ip;
+    const nodesData = getOnlineNodes(NODES_FILE_PATH, clientIP);
     res.status(200).json(nodesData);
 });
 
-function getOnlineNodes(filePath) {
+function getOnlineNodes(filePath, clientIP) {
     let onlineNodes = {};
     if (fileExists(filePath)) {
         const nodesData = fs.readFileSync(filePath, 'utf8');
         const nodes = JSON.parse(nodesData);
         for (const [ip, nodeInfo] of Object.entries(nodes)) {
-            if (nodeInfo.online) {
+            if (nodeInfo.online && ip !== clientIP) {
                 onlineNodes[ip] = nodeInfo;
             }
         }
