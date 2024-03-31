@@ -1,4 +1,4 @@
-\const express = require('express');
+const express = require('express');
 const jsonStream = require('JSONStream');
 const fs = require('fs');
 const fetch = require('node-fetch');
@@ -259,6 +259,25 @@ async function pingNodes() {
     await Promise.all(pingPromises);
 
     fs.writeFileSync(nodesFilePath, JSON.stringify(nodes, null, 2));
+}
+
+app.get('/get-nodes', (req, res) => {
+    const nodesData = getOnlineNodes(NODES_FILE_PATH);
+    res.status(200).json(nodesData);
+});
+
+function getOnlineNodes(filePath) {
+    let onlineNodes = {};
+    if (fileExists(filePath)) {
+        const nodesData = fs.readFileSync(filePath, 'utf8');
+        const nodes = JSON.parse(nodesData);
+        for (const [ip, nodeInfo] of Object.entries(nodes)) {
+            if (nodeInfo.online) {
+                onlineNodes[ip] = nodeInfo;
+            }
+        }
+    }
+    return onlineNodes;
 }
 
 app.listen(port, '0.0.0.0',() => {
