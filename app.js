@@ -224,6 +224,9 @@ function addChunkToFile(filePath, fileName, chunkId, nodeIP, newFreeStorage) {
     if (!files[fileName]) {
         files[fileName] = { chunks: {} };
     }
+    if (!files[fileName].chunks) {
+        files[fileName].chunks = {};
+    }
     if (!files[fileName].chunks[chunkId]) {
         files[fileName].chunks[chunkId] = [];
     }
