@@ -146,7 +146,7 @@ function checkRequiredKeys(obj, requiredKeys) {
 
 
 app.post('/add-chunk', (req, res) => {
-    const requiredKeys = ['chunkId', 'fileName'];
+    const requiredKeys = ['chunkId', 'fileName', 'newFreeStorage'];
     const missingKeys = checkRequiredKeys(req.body, requiredKeys);
 
     if (missingKeys.length > 0) {
@@ -155,14 +155,14 @@ app.post('/add-chunk', (req, res) => {
             message: `Missing required parameters: ${missingKeys.join(', ')}.`
         });
     }
-    const { chunkId, fileName } = req.body;
+    const { chunkId, fileName, newFreeStorage } = req.body;
     const nodeIP = req.ip;
-    addChunkToFile(FILES_FILE_PATH, fileName, chunkId, nodeIP);
+    addChunkToFile(FILES_FILE_PATH, fileName, chunkId, nodeIP, newFreeStorage);
 
     res.status(200).json({ success: true, message: `Chunk ${chunkId} added to file ${fileName}.` });
 });
 
-function addChunkToFile(filePath, fileName, chunkId, nodeIP) {
+function addChunkToFile(filePath, fileName, chunkId, nodeIP, newFreeStorage) {
     let files = {};
     if (fileExists(filePath)) {
         const filesData = fs.readFileSync(filePath, 'utf8');
@@ -179,6 +179,20 @@ function addChunkToFile(filePath, fileName, chunkId, nodeIP) {
         files[fileName].chunks[chunkId].push(nodeIP);
     }
     fs.writeFileSync(filePath, JSON.stringify(files, null, 2));
+    updateNodeStorageCapacity(nodeIP, newFreeStorage);
+}
+
+function updateNodeStorageCapacity(nodeIP, newFreeStorage) {
+    let nodes = {};
+    if (fileExists(NODES_FILE_PATH)) {
+        const nodesData = fs.readFileSync(NODES_FILE_PATH, 'utf8');
+        nodes = JSON.parse(nodesData);
+    }
+
+    if (nodes[nodeIP]) {
+        nodes[nodeIP].storageCapacityInMb = newFreeStorage;
+        fs.writeFileSync(NODES_FILE_PATH, JSON.stringify(nodes, null, 2));
+    }
 }
 
 app.post('/update-file', (req, res) => {
