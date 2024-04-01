@@ -147,14 +147,6 @@ app.get('/chunk-file', (req, res) => {
     const chunkSize = calculateChunkSize(fileSize);
     const totalChunks = Math.max(Math.ceil(fileSize / chunkSize), 1);
 
-    let nodes = {};
-    if (fileExists(NODES_FILE_PATH)) {
-        const nodesData = fs.readFileSync(NODES_FILE_PATH, 'utf8');
-        nodes = JSON.parse(nodesData);
-    } else {
-        return res.status(500).json({ error: "Node information not found" });
-    }
-
     const onlineNodeIPs = Object.keys(nodes).filter(nodeIP => nodes[nodeIP].online);
     const nodeCapacities = onlineNodeIPs.map(ip => nodes[ip].storageCapacityInMb);
 
